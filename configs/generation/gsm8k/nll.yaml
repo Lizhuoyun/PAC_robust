@@ -1,0 +1,136 @@
+seed: 42
+model_name_or_path: gpt2
+max_length: 512
+batch_size: 2
+epochs: 1
+finetune_mode: lora
+
+lora:
+  target_modules: ["c_attn"]
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  bias: none
+
+optimizer:
+  lr: 0.0001
+  weight_decay: 0.01
+  warmup_steps: 50
+
+dataset:
+  name: gsm8k
+  train_split: train
+  eval_split: test
+  final_marker: "Final answer: "
+
+generation:
+  max_new_tokens: 32
+  positions: answer
+  sample_n: 0
+
+objective:
+  name: nll
+
+augment:
+  enabled: false
+  preset: standard
+  clean_ratio: 0.5
+  n_perturb_per_clean: 1
+  train_budget: medium
+  presets:
+    cheap:
+      clean_ratio: 0.75
+      n_perturb_per_clean: 1
+      train_budget: small
+    standard:
+      clean_ratio: 0.5
+      n_perturb_per_clean: 1
+      train_budget: medium
+    strong:
+      clean_ratio: 0.25
+      n_perturb_per_clean: 2
+      train_budget: medium
+
+r3f:
+  enabled: false
+  preset: standard
+  noise_std: 0.02
+  lambda: 1.0
+  apply_layer: embeddings
+  detach_target: true
+  presets:
+    cheap:
+      noise_std: 0.01
+      lambda: 0.5
+    standard:
+      noise_std: 0.02
+      lambda: 1.0
+    strong:
+      noise_std: 0.04
+      lambda: 2.0
+
+smart:
+  enabled: false
+  preset: standard
+  K: 3
+  step_size: 0.001
+  eps: 0.01
+  norm: l2
+  lambda: 1.0
+  detach_target: true
+  presets:
+    cheap:
+      K: 1
+      step_size: 0.01
+      eps: 0.01
+      lambda: 0.5
+    standard:
+      K: 3
+      step_size: 0.0033
+      eps: 0.01
+      lambda: 1.0
+    strong:
+      K: 5
+      step_size: 0.002
+      eps: 0.01
+      lambda: 2.0
+
+perturbation:
+  method: synonym
+  replace_ratio: 0.1
+  num_sentences: 1
+  eval_budgets: [small, medium, large]
+  cache_root: cache/perturb_fields
+
+spectral:
+  enabled: false
+  gamma: 0.2
+  tau: 0.1
+  beta_ema: 0.9
+  n_refresh: 10
+  t_pi: 10
+  alpha: 0.1
+  beta: 0.1
+  eta: 0.0
+  sigma_noise: 0.01
+  stability: true
+  top_k: 10
+
+logging:
+  backend: jsonl
+  wandb:
+    project: icml_wcr_spectral
+    entity: null
+    group: null
+    name: null
+    tags: []
+    mode: offline
+    dir: ./wandb
+    log_every_steps: 50
+    watch_model: false
+    save_code: true
+    resume: allow
+  save_dir: results/gsm8k/nll/seed42
+  metrics_path: results/gsm8k/nll/seed42/metrics.jsonl
+  final_metrics_path: results/gsm8k/nll/seed42/metrics.json
+  log_every: 10

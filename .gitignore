@@ -1,0 +1,65 @@
+# ===== Python / tooling =====
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+
+.ipynb_checkpoints/
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Virtual envs
+venv/
+.venv/
+env/
+.env/
+
+# ===== Experiment outputs (do not upload) =====
+results/
+wandb/
+cache/
+outputs/
+output/
+runs/
+logs/
+lightning_logs/
+mlruns/
+tensorboard/
+
+nohup.out
+*.log
+
+# ===== Models / checkpoints (do not upload) =====
+checkpoints/
+ckpt/
+ckpts/
+models/
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+*.h5
+*.pkl
+*.joblib
+
+# ===== Large arrays / artifacts (usually outputs) =====
+*.npy
+*.npz
+
+# ===== Data (optional; keep code/config only) =====
+data/
+datasets/
