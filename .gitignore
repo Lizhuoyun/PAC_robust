@@ -60,6 +60,14 @@ models/
 *.npy
 *.npz
 
+# ===== Data files / figures (do not upload) =====
+*.csv
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+
 # ===== Data (optional; keep code/config only) =====
 data/
 datasets/
