@@ -20,9 +20,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 VENV="${VENV:-/LOCAL2/zhuoyun/Robustfairnessgpu3/venv}"
-if [[ -f "${VENV}/bin/activate" ]]; then
-  # shellcheck disable=SC1090
-  source "${VENV}/bin/activate"
+PYTHON="${PYTHON:-${VENV}/bin/python}"
+if [[ ! -x "${PYTHON}" ]]; then
+  echo "[error] cannot find python in VENV: PYTHON=${PYTHON} (set VENV or PYTHON)"
+  exit 2
 fi
 
 export HF_HOME="${HF_HOME:-/LOCAL2/zhuoyun/hf_cache}"
@@ -33,7 +34,7 @@ export NLTK_DATA="${NLTK_DATA:-/LOCAL2/zhuoyun/nltk_data}"
 
 WANDB_PROJECT="${WANDB_PROJECT:-icml_wcr_spectral}"
 WANDB_GROUP="${WANDB_GROUP:-qwen05b_arc_full}"
-WANDB_MODE="${WANDB_MODE:-online}"
+WANDB_MODE="${WANDB_MODE:-offline}"
 
 GPUS_RAW="${GPUS:-0,1,2}"
 IFS=',' read -r -a GPU_LIST <<< "${GPUS_RAW}"
@@ -117,14 +118,25 @@ run_one() {
 
   echo "[run] gpu=${gpu} run=${run_name} budget=${budget} -> ${out_dir}"
 
+  # For adversarial+spectral combos, use inner-guided only (no external spectral).
+  local spectral_enabled="${spectral}"
+  local spectral_inner_guided="false"
+  local r3f_spectral_guided="false"
+  local smart_spectral_guided="false"
+  if [[ "${run_name}" == *"r3f_spectral"* ]]; then
+    spectral_enabled="false"
+    spectral_inner_guided="true"
+    r3f_spectral_guided="true"
+  elif [[ "${run_name}" == *"smart_spectral"* ]]; then
+    spectral_enabled="false"
+    spectral_inner_guided="true"
+    smart_spectral_guided="true"
+  fi
+
   CUDA_VISIBLE_DEVICES="${gpu}" \
-  python -m experiments.train_classification \
+  "${PYTHON}" -m experiments.train_classification \
     --config "${TASK_CONFIG}" \
-    --log_backend wandb \
-    --wandb_mode "${WANDB_MODE}" \
-    --wandb_project "${WANDB_PROJECT}" \
-    --wandb_group "${WANDB_GROUP}" \
-    --wandb_name "${MODEL_TAG}/${run_name}/budget_${budget}/seed${SEED}" \
+    --log_backend jsonl \
     --override "seed=${SEED}" \
     --override "model_name_or_path=${MODEL}" \
     --override "batch_size=${BATCH_SIZE}" \
@@ -137,8 +149,11 @@ run_one() {
     --override "augment.clean_ratio=${AUGMENT_CLEAN_RATIO}" \
     --override "augment.train_budget=${budget}" \
     --override "r3f.enabled=${r3f}" \
+    --override "r3f.spectral_guided=${r3f_spectral_guided}" \
     --override "smart.enabled=${smart}" \
-    --override "spectral.enabled=${spectral}" \
+    --override "smart.spectral_guided=${smart_spectral_guided}" \
+    --override "spectral.enabled=${spectral_enabled}" \
+    --override "spectral.inner_guided=${spectral_inner_guided}" \
     --override "perturbation.budget=${budget}" \
     --override "perturbation.mix={\"typo\":1.0,\"synonym\":1.0,\"paraphrase\":1.0}" \
     --override "logging.save_dir=${out_dir}" \

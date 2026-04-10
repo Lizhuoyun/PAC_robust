@@ -284,7 +284,15 @@ def train_generation(config_path: str, overrides: List[str] = None) -> None:
                 noise = torch.randn_like(embeds) * cfg["r3f"]["noise_std"]
                 noisy_logits = model(inputs_embeds=embeds + noise, attention_mask=clean_mask).logits
                 mask = (clean_labels != -100).float()
-                r3f = r3f_kl_logits(logits, noisy_logits, mask=mask, detach_target=cfg["r3f"].get("detach_target", True))
+                use_spectral_guided = cfg["r3f"].get("spectral_guided", False)
+                r3f = r3f_kl_logits(
+                    logits,
+                    noisy_logits,
+                    mask=mask,
+                    detach_target=cfg["r3f"].get("detach_target", True),
+                    labels=clean_labels if use_spectral_guided else None,
+                    spectral_cfg=cfg["spectral"] if use_spectral_guided else None,
+                )
                 loss = loss + cfg["r3f"]["lambda"] * r3f
                 extra["r3f"] = r3f.detach()
 

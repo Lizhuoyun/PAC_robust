@@ -306,7 +306,14 @@ def train_classification(config_path: str, overrides: List[str] = None) -> None:
                 embeds = model.get_input_embeddings()(clean_ids)
                 noise = torch.randn_like(embeds) * cfg["r3f"]["noise_std"]
                 noisy_logits = forward_logits(clean_ids, clean_mask, clean_pos, inputs_embeds=embeds + noise)
-                r3f = r3f_kl_logits(clean_logits, noisy_logits, detach_target=cfg["r3f"].get("detach_target", True))
+                use_spectral_guided = cfg["r3f"].get("spectral_guided", False)
+                r3f = r3f_kl_logits(
+                    clean_logits,
+                    noisy_logits,
+                    detach_target=cfg["r3f"].get("detach_target", True),
+                    labels=labels_t if use_spectral_guided else None,
+                    spectral_cfg=cfg["spectral"] if use_spectral_guided else None,
+                )
                 loss = loss + cfg["r3f"]["lambda"] * r3f
                 extra["r3f"] = r3f.detach()
 
