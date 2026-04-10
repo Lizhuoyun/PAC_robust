@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Re-run ONLY two methods across BOTH datasets (ARC + GSM8K) for ALL models:
-#   1) r3f + spectral (external)
-#   2) smart + spectral (external)
-# For S-R3F (spectral inside R3F) use: experiments/run_suite_sr3f_queue.sh
+# S-R3F: Spectral inside R3F (spectral loss on the same noisy point as R3F).
+# Runs 3 models x ARC + GSM8K = 6 jobs, 1 per GPU at a time.
 #
 # Key constraints:
 # - Do NOT overwrite existing results (write to new versioned roots).
 # - Keep GPUs saturated but stable: 1 big-model training per GPU at a time (queue scheduler).
 #
-# Output roots (new version):
-# - ARC:   results/arc/<model_tag>_v4_2/{erm_r3f_spectral,erm_smart_spectral}/budget_large/seed42
-# - GSM8K: results/gsm8k/<model_tag>_gsm8k_suite_v2_2/{erm_r3f_spectral,erm_smart_spectral}/seed42
+# Output roots:
+# - ARC:   results/arc/<model_tag>_v4_sr3f/r3f_spectral_guided/budget_large/seed42
+# - GSM8K: results/gsm8k/<model_tag>_gsm8k_suite_v2_sr3f/r3f_spectral_guided/seed42
 #
 # Optional env:
 #   GPUS="0,1,2"
@@ -100,11 +98,10 @@ with_gpu_lock() {
 run_arc() {
   local gpu="$1"
   local model="$2"
-  local method="$3"   # erm_r3f_spectral | erm_smart_spectral
   local tag; tag="$(tagify "$model")"
-  local root="results/arc/${tag}_v4_2"
-  local out="${root}/${method}/budget_large/seed42"
-  local log="${root}/_logs/${method}.log"
+  local root="results/arc/${tag}_v4_sr3f"
+  local out="${root}/r3f_spectral_guided/budget_large/seed42"
+  local log="${root}/_logs/r3f_spectral_guided.log"
   mkdir -p "${root}/_logs" "${out}"
 
   if is_done_json "${out}/metrics.json"; then
@@ -112,18 +109,7 @@ run_arc() {
     return 0
   fi
 
-  local r3f="false"
-  local smart="false"
-  if [[ "${method}" == "erm_r3f_spectral" ]]; then
-    r3f="true"
-  elif [[ "${method}" == "erm_smart_spectral" ]]; then
-    smart="true"
-  else
-    echo "unknown arc method: ${method}"
-    return 2
-  fi
-
-  echo "[run][arc] gpu=${gpu} model=${model} method=${method} -> ${out}"
+  echo "[run][arc] gpu=${gpu} model=${model} S-R3F -> ${out}"
   CUDA_VISIBLE_DEVICES="${gpu}" "${PYTHON}" -m experiments.train_classification \
     --config configs/classification/arc/erm.yaml \
     --override "seed=42" \
@@ -133,11 +119,10 @@ run_arc() {
     --override "model.torch_dtype=${MODEL_DTYPE}" \
     --override "lora.target_modules=${LORA_TARGET}" \
     --override "augment.enabled=false" \
-    --override "r3f.enabled=${r3f}" \
-    --override "smart.enabled=${smart}" \
-    --override "smart.spectral_guided=false" \
-    --override "spectral.enabled=true" \
-    --override "spectral.inner_guided=false" \
+    --override "r3f.enabled=true" \
+    --override "r3f.spectral_guided=true" \
+    --override "smart.enabled=false" \
+    --override "spectral.enabled=false" \
     --override "spectral.alpha=${ALPHA}" \
     --override "spectral.gamma=${GAMMA}" \
     --override "spectral.tau=${TAU}" \
@@ -158,11 +143,10 @@ run_arc() {
 run_gsm8k() {
   local gpu="$1"
   local model="$2"
-  local method="$3"   # erm_r3f_spectral | erm_smart_spectral
   local tag; tag="$(tagify "$model")"
-  local root="results/gsm8k/${tag}_gsm8k_suite_v2_2"
-  local out="${root}/${method}/seed42"
-  local log="${root}/_logs/${method}.log"
+  local root="results/gsm8k/${tag}_gsm8k_suite_v2_sr3f"
+  local out="${root}/r3f_spectral_guided/seed42"
+  local log="${root}/_logs/r3f_spectral_guided.log"
   mkdir -p "${root}/_logs" "${out}"
 
   if is_done_json "${out}/metrics.json"; then
@@ -170,18 +154,7 @@ run_gsm8k() {
     return 0
   fi
 
-  local r3f="false"
-  local smart="false"
-  if [[ "${method}" == "erm_r3f_spectral" ]]; then
-    r3f="true"
-  elif [[ "${method}" == "erm_smart_spectral" ]]; then
-    smart="true"
-  else
-    echo "unknown gsm8k method: ${method}"
-    return 2
-  fi
-
-  echo "[run][gsm8k] gpu=${gpu} model=${model} method=${method} -> ${out}"
+  echo "[run][gsm8k] gpu=${gpu} model=${model} S-R3F -> ${out}"
   CUDA_VISIBLE_DEVICES="${gpu}" "${PYTHON}" -m experiments.train_generation \
     --config configs/generation/gsm8k/nll.yaml \
     --override "seed=42" \
@@ -191,11 +164,10 @@ run_gsm8k() {
     --override "model.torch_dtype=${MODEL_DTYPE}" \
     --override "lora.target_modules=${LORA_TARGET}" \
     --override "augment.enabled=false" \
-    --override "r3f.enabled=${r3f}" \
-    --override "smart.enabled=${smart}" \
-    --override "smart.spectral_guided=false" \
-    --override "spectral.enabled=true" \
-    --override "spectral.inner_guided=false" \
+    --override "r3f.enabled=true" \
+    --override "r3f.spectral_guided=true" \
+    --override "smart.enabled=false" \
+    --override "spectral.enabled=false" \
     --override "spectral.alpha=${ALPHA}" \
     --override "spectral.gamma=${GAMMA}" \
     --override "spectral.tau=${TAU}" \
@@ -213,19 +185,10 @@ run_gsm8k() {
     >> "${log}" 2>&1
 }
 
-# Build job list: 3 models * 2 datasets * 2 methods = 12 jobs
-METHODS=("erm_r3f_spectral" "erm_smart_spectral")
+# Build job list: 3 models * 2 datasets = 6 jobs
 JOBS=()
-for m in "${MODELS[@]}"; do
-  for meth in "${METHODS[@]}"; do
-    JOBS+=("arc|${m}|${meth}")
-  done
-done
-for m in "${MODELS[@]}"; do
-  for meth in "${METHODS[@]}"; do
-    JOBS+=("gsm8k|${m}|${meth}")
-  done
-done
+for m in "${MODELS[@]}"; do JOBS+=("arc|${m}"); done
+for m in "${MODELS[@]}"; do JOBS+=("gsm8k|${m}"); done
 
 # One-job-per-GPU scheduler
 declare -A PID_BY_GPU
@@ -233,7 +196,7 @@ declare -A SPEC_BY_PID
 FAILURES=0
 job_idx=0
 for spec in "${JOBS[@]}"; do
-  IFS='|' read -r kind model method <<< "${spec}"
+  IFS='|' read -r kind model <<< "${spec}"
   gpu="${GPU_LIST[$((job_idx % ${#GPU_LIST[@]}))]}"
 
   prev="${PID_BY_GPU[$gpu]:-}"
@@ -246,9 +209,9 @@ for spec in "${JOBS[@]}"; do
   fi
 
   if [[ "${kind}" == "arc" ]]; then
-    (with_gpu_lock "${gpu}" run_arc "${gpu}" "${model}" "${method}") &
+    (with_gpu_lock "${gpu}" run_arc "${gpu}" "${model}") &
   else
-    (with_gpu_lock "${gpu}" run_gsm8k "${gpu}" "${model}" "${method}") &
+    (with_gpu_lock "${gpu}" run_gsm8k "${gpu}" "${model}") &
   fi
 
   pid=$!
@@ -272,5 +235,5 @@ if [[ "${FAILURES}" -gt 0 ]]; then
   echo "[done-with-failures] finished with ${FAILURES} failed job(s)."
   exit 1
 fi
-echo "[done] all (r3f+spectral, smart+spectral) jobs finished."
+echo "[done] all S-R3F jobs finished."
 

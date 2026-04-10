@@ -12,7 +12,7 @@ from src.data.prompts import PromptRenderer, PromptTemplate, extract_gen_fields
 from src.data.perturbations import build_perturbed_fields_cache, load_perturbed_fields_cache, materialize_perturbed_fields
 from src.losses.base_losses import lm_nll
 from src.losses.r3f import r3f_kl_logits
-from src.losses.smart import smart_kl
+from src.losses.smart import smart_kl, _candidate_probs_from_logits
 from src.losses.spectral import SpectralEMA, batch_transition_matrix, stability_kl, sample_lora_noise, apply_lora_noise, remove_lora_noise
 from src.models.lora import apply_lora, iter_lora_params
 from src.logging.logger import ExperimentLogger
@@ -295,6 +295,22 @@ def train_generation(config_path: str, overrides: List[str] = None) -> None:
                 )
                 loss = loss + cfg["r3f"]["lambda"] * r3f
                 extra["r3f"] = r3f.detach()
+                # S-R3F: spectral loss on the same noisy point (spectral inside R3F)
+                if cfg["r3f"].get("spectral_guided", False) and cfg.get("spectral"):
+                    valid_mask = clean_labels != -100
+                    if valid_mask.any():
+                        spec = cfg["spectral"]
+                        alpha = spec.get("alpha", 0.1)
+                        gamma = spec.get("gamma", 0.2)
+                        tau = spec.get("tau", 0.1)
+                        top_k = int(spec.get("top_k", 10))
+                        logits_v = noisy_logits[valid_mask]
+                        gold_v = clean_labels[valid_mask].long()
+                        probs, margins, labels_local = _candidate_probs_from_logits(logits_v, gold_v, top_k=top_k)
+                        batch_mat = batch_transition_matrix(probs, labels_local, margins, gamma, tau)
+                        spectral_risk = batch_mat.sum(dim=0).max()
+                        loss = loss + alpha * spectral_risk
+                        extra["r3f_spectral"] = spectral_risk.detach()
 
             if cfg.get("smart", {}).get("enabled", False):
                 def logits_fn(ids, mask, inputs_embeds=None):

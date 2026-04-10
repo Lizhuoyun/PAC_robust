@@ -316,6 +316,18 @@ def train_classification(config_path: str, overrides: List[str] = None) -> None:
                 )
                 loss = loss + cfg["r3f"]["lambda"] * r3f
                 extra["r3f"] = r3f.detach()
+                # S-R3F: spectral loss on the same noisy point (spectral inside R3F)
+                if cfg["r3f"].get("spectral_guided", False) and cfg.get("spectral"):
+                    spec = cfg["spectral"]
+                    alpha = spec.get("alpha", 0.1)
+                    gamma = spec.get("gamma", 0.2)
+                    tau = spec.get("tau", 0.1)
+                    probs = F.softmax(noisy_logits, dim=-1)
+                    margins = margin_from_logits(noisy_logits, labels_t)
+                    batch_mat = batch_transition_matrix(probs, labels_t, margins, gamma, tau)
+                    spectral_risk = batch_mat.sum(dim=0).max()
+                    loss = loss + alpha * spectral_risk
+                    extra["r3f_spectral"] = spectral_risk.detach()
 
             if cfg.get("smart", {}).get("enabled", False):
                 smart = smart_kl(
