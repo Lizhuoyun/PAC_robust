@@ -1,10 +1,10 @@
 """
-Text perturbation functions for ARC-Challenge.
+Text perturbation functions (task-agnostic).
 
 Three perturbation types:
   typo           — character-level noise (random delete/insert/swap/replace)
-  distractor     — prepend an unrelated sentence
-  format_rewrite — rewrite choice labels from letters to numbers/ordinals
+  distractor     — prepend an unrelated sentence to the question text
+  format_rewrite — rewrite prompt format (ARC: relabel choices; BoolQ: rephrase)
 """
 import random
 import string
@@ -30,30 +30,9 @@ _DISTRACTORS = [
 ]
 
 
-# ── Format-rewrite templates ───────────────────────────────────────────────
+# ── Typo perturbation ────────────────────────────────────────────────────
 
-def _format_rewrite(question: str, choices: list, rng: random.Random) -> str:
-    """Rewrite multiple-choice options using a different labelling style."""
-    style = rng.choice(["numeric", "ordinal", "roman"])
-    if style == "numeric":
-        labels = [f"({i+1})" for i in range(len(choices))]
-    elif style == "ordinal":
-        labels = ["First", "Second", "Third", "Fourth"][: len(choices)]
-    else:
-        labels = ["I.", "II.", "III.", "IV."][: len(choices)]
-
-    choice_str = "\n".join(f"{lbl} {c}" for lbl, c in zip(labels, choices))
-    return (
-        "Answer the following science question.\n\n"
-        f"Question: {question}\n\n"
-        f"{choice_str}\n\n"
-        "Answer (use the original letter A/B/C/D):"
-    )
-
-
-# ── Typo perturbation ──────────────────────────────────────────────────────
-
-def _typo_word(word: str, rng: random.Random) -> str:
+def _typo_word(word, rng):
     if len(word) <= 1:
         return word
     op = rng.choice(["delete", "insert", "swap", "replace"])
@@ -73,64 +52,104 @@ def _typo_word(word: str, rng: random.Random) -> str:
         return word[:i] + c + word[i+1:]
 
 
-def typo_perturbation(text: str, rate: float = 0.10,
-                      rng: random.Random = None) -> str:
+def typo_perturbation(text, rate=0.10, rng=None):
     if rng is None:
         rng = random.Random()
     words = text.split()
-    out = []
-    for w in words:
-        if rng.random() < rate:
-            out.append(_typo_word(w, rng))
-        else:
-            out.append(w)
+    out = [_typo_word(w, rng) if rng.random() < rate else w for w in words]
     return " ".join(out)
 
 
-# ── Distractor perturbation ────────────────────────────────────────────────
+# ── Distractor perturbation ──────────────────────────────────────────────
 
-def distractor_perturbation(text: str, rng: random.Random = None) -> str:
+def distractor_perturbation(text, rng=None):
     if rng is None:
         rng = random.Random()
-    distractor = rng.choice(_DISTRACTORS)
-    return distractor + " " + text
+    return rng.choice(_DISTRACTORS) + " " + text
 
 
-# ── Main dispatch ──────────────────────────────────────────────────────────
+# ── Format-rewrite (ARC) ─────────────────────────────────────────────────
 
-def apply_perturbation(ex: dict, ptype: str, cfg: dict,
-                       rng: random.Random = None) -> dict:
-    """
-    Apply a named perturbation to an ARC example.
-    Returns a shallow copy with 'text' and 'prompt' replaced.
-    ptype: 'clean' | 'typo' | 'distractor' | 'format_rewrite'
-    """
+def _format_rewrite_arc(question, choices, rng):
+    style = rng.choice(["numeric", "ordinal", "roman"])
+    if style == "numeric":
+        labels = [f"({i+1})" for i in range(len(choices))]
+    elif style == "ordinal":
+        labels = ["First", "Second", "Third", "Fourth"][:len(choices)]
+    else:
+        labels = ["I.", "II.", "III.", "IV."][:len(choices)]
+    choice_str = "\n".join(f"{lbl} {c}" for lbl, c in zip(labels, choices))
+    return (
+        "Answer the following science question.\n\n"
+        f"Question: {question}\n\n"
+        f"{choice_str}\n\n"
+        "Answer (use the original letter A/B/C/D):"
+    )
+
+
+# ── Format-rewrite (BoolQ) ───────────────────────────────────────────────
+
+def _format_rewrite_boolq(passage, question, rng):
+    style = rng.choice(["yn", "tf", "agree"])
+    if style == "yn":
+        return (
+            f"Based on the following text, answer Yes or No.\n\n"
+            f"{passage}\n\n"
+            f"Q: {question}\n\n"
+            "A. No\nB. Yes\n\nAnswer:"
+        )
+    elif style == "tf":
+        return (
+            f"Read the text and decide if the statement is True or False.\n\n"
+            f"Text: {passage}\n\n"
+            f"Statement: {question}\n\n"
+            "A. False\nB. True\n\nAnswer:"
+        )
+    else:
+        return (
+            f"Passage: {passage}\n\n"
+            f"Do you agree with the following? {question}\n\n"
+            "A. Disagree\nB. Agree\n\nAnswer:"
+        )
+
+
+# ── Main dispatch ────────────────────────────────────────────────────────
+
+def apply_perturbation(ex, ptype, cfg, rng=None):
     if rng is None:
         rng = random.Random()
     if ptype == "clean":
         return ex
 
-    ex2 = dict(ex)  # shallow copy
+    ex2 = dict(ex)
+    task = ex.get("task", cfg.get("task_name", "arc"))
+
     if ptype == "typo":
-        ex2["text"]   = typo_perturbation(ex["text"], cfg["typo_rate"], rng)
-        ex2["prompt"] = _rebuild_prompt(ex2)
+        ex2["text"] = typo_perturbation(ex["text"], cfg["typo_rate"], rng)
+        ex2["prompt"] = _rebuild_prompt(ex2, task)
     elif ptype == "distractor":
-        ex2["text"]   = distractor_perturbation(ex["text"], rng)
-        ex2["prompt"] = _rebuild_prompt(ex2)
+        ex2["text"] = distractor_perturbation(ex["text"], rng)
+        ex2["prompt"] = _rebuild_prompt(ex2, task)
     elif ptype == "format_rewrite":
-        ex2["prompt"] = _format_rewrite(ex["text"], ex["choices"], rng)
-        # text unchanged — only the prompt format changes
+        if task == "boolq":
+            ex2["prompt"] = _format_rewrite_boolq(
+                ex["passage"], ex["text"], rng)
+        else:
+            ex2["prompt"] = _format_rewrite_arc(
+                ex["text"], ex["choices"], rng)
     return ex2
 
 
-def _rebuild_prompt(ex: dict) -> str:
-    from data import arc_prompt
-    return arc_prompt(ex["text"], ex["choices"])
+def _rebuild_prompt(ex, task):
+    if task == "boolq":
+        from data import boolq_prompt
+        return boolq_prompt(ex["passage"], ex["text"])
+    else:
+        from data import arc_prompt
+        return arc_prompt(ex["text"], ex["choices"])
 
 
-def random_perturbation(ex: dict, cfg: dict,
-                        rng: random.Random = None) -> dict:
-    """Sample one perturbation type uniformly at random and apply it."""
+def random_perturbation(ex, cfg, rng=None):
     if rng is None:
         rng = random.Random()
     ptype = rng.choice(cfg["perturb_types"])

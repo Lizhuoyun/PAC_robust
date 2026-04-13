@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from models  import load_from_checkpoint, tokenise_batch, extract_class_logits, get_label_ids
-from data    import load_arc
+from data    import load_data
 from perturb import apply_perturbation
 from plugin  import compute_margins
 
@@ -32,7 +32,7 @@ def calibrate_gamma(cfg: dict, ckpt_dir: str,
     bs        = cfg["batch_size"]
     rng       = random.Random(seed)
 
-    data = load_arc(cfg, seed=seed)
+    data = load_data(cfg, seed=seed)
     val  = data["val"]
 
     all_margins = []

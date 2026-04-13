@@ -10,8 +10,8 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from config  import CKPT_DIR
-from data    import load_arc
+import config as _cfg_mod
+from data    import load_data
 from models  import load_for_training, tokenise_batch, extract_class_logits, get_label_ids
 
 
@@ -30,7 +30,7 @@ def run_training(trainer_step, cfg: dict, seed: int, tag: str) -> str:
     print(f"  Training  tag={tag}  seed={seed}")
     print(f"{'='*64}")
 
-    data       = load_arc(cfg, seed=seed)
+    data       = load_data(cfg, seed=seed)
     model, tok = load_for_training(cfg)
     label_ids  = get_label_ids(tok, cfg["label_chars"])
 
@@ -51,7 +51,7 @@ def run_training(trainer_step, cfg: dict, seed: int, tag: str) -> str:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    save_dir     = os.path.join(CKPT_DIR, tag)
+    save_dir     = os.path.join(_cfg_mod.CKPT_DIR, tag)
     best_val     = float("inf")
     grad_accum   = cfg["grad_accum"]
     global_step  = 0
@@ -102,7 +102,6 @@ def run_training(trainer_step, cfg: dict, seed: int, tag: str) -> str:
             best_val = val_loss
             os.makedirs(save_dir, exist_ok=True)
             model.save_pretrained(save_dir)
-            tok.save_pretrained(save_dir)
 
     print(f"  Saved best ({best_val:.4f}) → {save_dir}")
     del model, opt, sched

@@ -36,7 +36,9 @@ PERTURB_ORDER = ["clean", "typo", "distractor", "format_rewrite"]
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--gamma_q", type=float, default=DEFAULT_GAMMA_Q)
+    p.add_argument("--gamma_q",   type=float, default=DEFAULT_GAMMA_Q)
+    p.add_argument("--model_tag", default=None)
+    p.add_argument("--task",      default=None)
     return p.parse_args()
 
 
@@ -48,17 +50,27 @@ def load_all_csvs(results_dir: str) -> list:
         with open(fp) as f:
             for r in csv.DictReader(f):
                 rows.append(r)
+    for fp in glob.glob(os.path.join(results_dir, "*", "results_*.csv")):
+        if "combined" in fp or "gamma_sweep" in fp:
+            continue
+        with open(fp) as f:
+            for r in csv.DictReader(f):
+                rows.append(r)
     return rows
 
 
-def group_rows(rows: list, gamma_q: float) -> dict:
+def group_rows(rows: list, gamma_q: float,
+               model_tag: str = None, task: str = None) -> dict:
     """Group rows by (method, perturbation); filter by gamma_q for plugin methods."""
     g = defaultdict(list)
     for r in rows:
+        if model_tag and r.get("model_tag", "") != model_tag:
+            continue
+        if task and r.get("task", "") != task:
+            continue
         method = r["method"]
         ptype  = r["perturbation"]
         gq     = float(r.get("gamma_q", gamma_q))
-        # For plugin methods, only keep the target gamma_q
         if method.endswith("_plugin") or method == "plugin":
             if abs(gq - gamma_q) > 1e-6:
                 continue
@@ -238,51 +250,63 @@ def main():
         w.writerows(rows)
     print(f"  → results_combined.csv  ({len(rows)} rows)")
 
-    grouped = group_rows(rows, gamma_q)
+    # Discover unique (model_tag, task) combos
+    combos = set()
+    for r in rows:
+        mt = r.get("model_tag", "default")
+        tk = r.get("task", "arc")
+        combos.add((mt, tk))
+    combos = sorted(combos)
 
-    # ── Table 1 ────────────────────────────────────────────────────────
-    t1 = make_table1(grouped)
+    # If specific filter, narrow down
+    if args.model_tag or args.task:
+        combos = [(mt, tk) for mt, tk in combos
+                  if (not args.model_tag or mt == args.model_tag)
+                  and (not args.task or tk == args.task)]
+
+    for mt, tk in combos:
+        subdir = os.path.join(RESULTS_DIR, f"{mt}_{tk}")
+        os.makedirs(subdir, exist_ok=True)
+        grouped = group_rows(rows, gamma_q, model_tag=mt, task=tk)
+
+        t1 = make_table1(grouped)
+        with open(os.path.join(subdir, "table1_main.csv"), "w", newline="") as f:
+            csv.writer(f).writerows(t1)
+
+        t2 = make_table2(grouped)
+        with open(os.path.join(subdir, "table2_plugin_gain.csv"), "w", newline="") as f:
+            csv.writer(f).writerows(t2)
+
+        t3 = make_table3(grouped)
+        if t3:
+            with open(os.path.join(subdir, "table3_ablation.csv"), "w", newline="") as f:
+                csv.writer(f).writerows(t3)
+
+        sub_rows = [r for r in rows if r.get("model_tag","default") == mt and r.get("task","arc") == tk]
+        sweep = make_gamma_sweep_data(sub_rows)
+        with open(os.path.join(subdir, "gamma_sweep.json"), "w") as f:
+            json.dump(sweep, f, indent=2)
+
+        print(f"\n{'─'*100}")
+        print(f"  {mt} / {tk}  — Table 1 ({len(t1)-1} rows), "
+              f"Table 2 ({len(t2)-1} rows)")
+        print(f"{'─'*100}")
+        col_widths = [18, 16, 16, 16, 16, 18, 18, 14]
+        for row in t1:
+            line = "  ".join(str(c).ljust(w) for c, w in zip(row, col_widths))
+            print(line)
+
+    # Also produce a global aggregate
+    grouped_all = group_rows(rows, gamma_q)
+    t1_all = make_table1(grouped_all)
     with open(os.path.join(RESULTS_DIR, "table1_main.csv"), "w", newline="") as f:
-        csv.writer(f).writerows(t1)
-    print(f"  → table1_main.csv  ({len(t1)-1} rows)")
-
-    # ── Table 2 ────────────────────────────────────────────────────────
-    t2 = make_table2(grouped)
+        csv.writer(f).writerows(t1_all)
+    t2_all = make_table2(grouped_all)
     with open(os.path.join(RESULTS_DIR, "table2_plugin_gain.csv"), "w", newline="") as f:
-        csv.writer(f).writerows(t2)
-    print(f"  → table2_plugin_gain.csv  ({len(t2)-1} rows)")
-
-    # ── Table 3 ────────────────────────────────────────────────────────
-    t3 = make_table3(grouped)
-    if t3:
-        with open(os.path.join(RESULTS_DIR, "table3_ablation.csv"), "w", newline="") as f:
-            csv.writer(f).writerows(t3)
-        print(f"  → table3_ablation.csv  ({len(t3)-1} rows)")
-
-    # ── Gamma sweep JSON ───────────────────────────────────────────────
-    sweep = make_gamma_sweep_data(rows)
+        csv.writer(f).writerows(t2_all)
+    sweep_all = make_gamma_sweep_data(rows)
     with open(os.path.join(RESULTS_DIR, "gamma_sweep_plot_data.json"), "w") as f:
-        json.dump(sweep, f, indent=2)
-    print("  → gamma_sweep_plot_data.json")
-
-    # ── Print Table 1 to stdout ────────────────────────────────────────
-    print("\n" + "─" * 120)
-    print("TABLE 1  — Main Results  (mean±std, gamma_q={})".format(gamma_q))
-    print("─" * 120)
-    col_widths = [18, 16, 16, 16, 16, 18, 18, 14]
-    for row in t1:
-        line = "  ".join(str(c).ljust(w)
-                         for c, w in zip(row, col_widths))
-        print(line)
-
-    print("\n" + "─" * 100)
-    print("TABLE 2  — Plugin Gain")
-    print("─" * 100)
-    col_widths2 = [14, 16, 10, 10, 10, 14, 14]
-    for row in t2:
-        line = "  ".join(str(c).ljust(w)
-                         for c, w in zip(row, col_widths2))
-        print(line)
+        json.dump(sweep_all, f, indent=2)
 
 
 if __name__ == "__main__":

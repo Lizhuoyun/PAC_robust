@@ -87,18 +87,60 @@ ALL_METHODS = [
     "awp",
     "awp_plugin",
 ]
-# Priority 1 (must run)
 P1_METHODS = [
     "base_clean", "base_aug", "plugin",
     "r3f", "r3f_plugin",
     "smart", "smart_plugin",
 ]
-# Priority 2 (optional)
 P2_METHODS = ["awp", "awp_plugin"]
+
+# ── Model registry (local snapshot paths) ─────────────────────────────────
+MODEL_REGISTRY = {
+    "qwen05b": (
+        "/LOCAL2/zhuoyun/hf_cache/models/"
+        "models--Qwen--Qwen2.5-0.5B-Instruct/snapshots/"
+        "7ae557604adf67be50417f59c2c2f167def9a775"
+    ),
+    "qwen7b": (
+        "/LOCAL2/zhuoyun/hf_cache/models/"
+        "models--Qwen--Qwen2.5-7B-Instruct/snapshots/"
+        "a09a35458c702b33eeacc393d103063234e8bc28"
+    ),
+    "mistral7b": (
+        "/LOCAL2/zhuoyun/hf_cache/models/"
+        "models--mistralai--Mistral-7B-Instruct-v0.2/snapshots/"
+        "3ad372fc79158a2148299e3318516c786aeded6c"
+    ),
+}
+
+# ── Task presets ──────────────────────────────────────────────────────────
+TASK_PRESETS = {
+    "arc": dict(
+        task_name   = "arc",
+        num_classes = 4,
+        label_chars = ["A", "B", "C", "D"],
+        train_size  = 1000,
+        val_size    = 295,
+        test_size   = 500,
+    ),
+    "boolq": dict(
+        task_name   = "boolq",
+        num_classes = 2,
+        label_chars = ["A", "B"],
+        train_size  = 1000,
+        val_size    = 500,
+        test_size   = 500,
+        max_seq_len = 384,
+    ),
+}
 
 
 def get_cfg(**overrides) -> dict:
-    """Return a config dict, optionally overriding defaults."""
+    """Return a config dict, optionally overriding defaults.
+    
+    If 'task_name' is in overrides, auto-applies TASK_PRESETS for that task
+    *before* user overrides, so user values still win.
+    """
     cfg = dict(
         # ── identity ────────────────────────────────
         task_name   = TASK,
@@ -152,5 +194,8 @@ def get_cfg(**overrides) -> dict:
         # ── experiment ──────────────────────────────
         seeds   = SEEDS,
     )
+    task_key = overrides.get("task_name", cfg["task_name"])
+    if task_key in TASK_PRESETS:
+        cfg.update(TASK_PRESETS[task_key])
     cfg.update(overrides)
     return cfg
