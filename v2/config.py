@@ -12,12 +12,53 @@ BASE_DIR    = "/LOCAL2/zhuoyun/PAC_robust/v2"
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 CKPT_DIR    = os.path.join(BASE_DIR, "checkpoints")
 
+
+def _resolve_snapshot(model_dir: str, preferred_hash: str = None,
+                      env_var: str = None, required: bool = True) -> str:
+    """
+    Resolve a local snapshot path from HF cache or an explicit env override.
+
+    If `preferred_hash` is unavailable but snapshots exist, fall back to the
+    lexicographically last snapshot directory so newer downloads work without
+    editing the repo. Optional models return None when absent.
+    """
+    if env_var:
+        override = os.environ.get(env_var)
+        if override:
+            if os.path.isdir(override):
+                return override
+            if required:
+                raise FileNotFoundError(
+                    f"{env_var} points to a missing directory: {override}")
+            return None
+
+    snapshots_dir = os.path.join(HF_CACHE, "models", model_dir, "snapshots")
+    if not os.path.isdir(snapshots_dir):
+        if required:
+            raise FileNotFoundError(f"Missing snapshots directory: {snapshots_dir}")
+        return None
+
+    if preferred_hash:
+        preferred = os.path.join(snapshots_dir, preferred_hash)
+        if os.path.isdir(preferred):
+            return preferred
+
+    candidates = sorted(
+        name for name in os.listdir(snapshots_dir)
+        if os.path.isdir(os.path.join(snapshots_dir, name))
+    )
+    if not candidates:
+        if required:
+            raise FileNotFoundError(f"No snapshot folders found in: {snapshots_dir}")
+        return None
+    return os.path.join(snapshots_dir, candidates[-1])
+
 # ── Model ──────────────────────────────────────────────────────────────────
 # Qwen2.5-0.5B-Instruct — pure text causal LM, local snapshot path
-MODEL_NAME = (
-    "/LOCAL2/zhuoyun/hf_cache/models/"
-    "models--Qwen--Qwen2.5-0.5B-Instruct/snapshots/"
-    "7ae557604adf67be50417f59c2c2f167def9a775"
+MODEL_NAME = _resolve_snapshot(
+    "models--Qwen--Qwen2.5-0.5B-Instruct",
+    preferred_hash="7ae557604adf67be50417f59c2c2f167def9a775",
+    env_var="QWEN05B_SNAPSHOT",
 )
 
 # ── LoRA ───────────────────────────────────────────────────────────────────
@@ -96,22 +137,39 @@ P2_METHODS = ["awp", "awp_plugin"]
 
 # ── Model registry (local snapshot paths) ─────────────────────────────────
 MODEL_REGISTRY = {
-    "qwen05b": (
-        "/LOCAL2/zhuoyun/hf_cache/models/"
-        "models--Qwen--Qwen2.5-0.5B-Instruct/snapshots/"
-        "7ae557604adf67be50417f59c2c2f167def9a775"
+    "qwen05b": _resolve_snapshot(
+        "models--Qwen--Qwen2.5-0.5B-Instruct",
+        preferred_hash="7ae557604adf67be50417f59c2c2f167def9a775",
+        env_var="QWEN05B_SNAPSHOT",
     ),
-    "qwen7b": (
-        "/LOCAL2/zhuoyun/hf_cache/models/"
-        "models--Qwen--Qwen2.5-7B-Instruct/snapshots/"
-        "a09a35458c702b33eeacc393d103063234e8bc28"
+    "qwen7b": _resolve_snapshot(
+        "models--Qwen--Qwen2.5-7B-Instruct",
+        preferred_hash="a09a35458c702b33eeacc393d103063234e8bc28",
+        env_var="QWEN7B_SNAPSHOT",
     ),
-    "mistral7b": (
-        "/LOCAL2/zhuoyun/hf_cache/models/"
-        "models--mistralai--Mistral-7B-Instruct-v0.2/snapshots/"
-        "3ad372fc79158a2148299e3318516c786aeded6c"
+    "mistral7b": _resolve_snapshot(
+        "models--mistralai--Mistral-7B-Instruct-v0.2",
+        preferred_hash="3ad372fc79158a2148299e3318516c786aeded6c",
+        env_var="MISTRAL7B_SNAPSHOT",
     ),
 }
+
+_OPTIONAL_MODELS = {
+    "qwen15b": _resolve_snapshot(
+        "models--Qwen--Qwen2.5-1.5B-Instruct",
+        env_var="QWEN15B_SNAPSHOT",
+        required=False,
+    ),
+    "qwen3b": _resolve_snapshot(
+        "models--Qwen--Qwen2.5-3B-Instruct",
+        env_var="QWEN3B_SNAPSHOT",
+        required=False,
+    ),
+}
+
+for _tag, _path in _OPTIONAL_MODELS.items():
+    if _path:
+        MODEL_REGISTRY[_tag] = _path
 
 # ── Task presets ──────────────────────────────────────────────────────────
 TASK_PRESETS = {

@@ -40,6 +40,11 @@ def _needs_gamma(method):
     return method.endswith("_plugin") or method == "plugin"
 
 
+def _fmt_tag_float(x: float) -> str:
+    s = f"{x:.4g}"
+    return s.replace("-", "m").replace(".", "p")
+
+
 def main():
     args = parse_args()
     overrides = dict(device=args.device)
@@ -70,6 +75,10 @@ def main():
         tag = f"{args.method}_q{int(args.gamma_q*100):02d}_s{args.seed}"
     else:
         tag = f"{args.method}_s{args.seed}"
+    if args.alpha is not None:
+        tag += f"_a{_fmt_tag_float(args.alpha)}"
+    if args.beta is not None:
+        tag += f"_b{_fmt_tag_float(args.beta)}"
 
     # ── Determine gamma ────────────────────────────────────────────────
     gamma = 0.0
@@ -142,6 +151,8 @@ def main():
             task                 = task_tag,
             method               = args.method,
             seed                 = args.seed,
+            alpha                = cfg["alpha"],
+            beta                 = cfg["beta"],
             gamma_q              = args.gamma_q,
             gamma                = eval_gamma,
             perturbation         = r["perturbation"],
